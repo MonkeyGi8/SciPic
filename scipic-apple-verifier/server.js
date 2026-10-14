@@ -46,6 +46,7 @@ const server = http.createServer(async (req, res) => {
   if (req.method === 'GET' && req.url === '/health') return json(res, 200, { ok: true });
   if (req.method !== 'POST' || req.url !== '/apple/notifications') return json(res, 404, { error: 'not_found' });
   try {
+    for (const key of ['APPLE_BUNDLE_ID','APPLE_APP_ID','APPLE_ROOT_CA_CERTS_BASE64','SCIPIC_INGEST_SHARED_SECRET','SCIPIC_VERIFIED_INGEST_URL']) { if (!env[key]) return json(res, 503, { error: 'not_configured' }); }
     const body = await readBody(req);
     if (typeof body?.signedPayload !== 'string' || body.signedPayload.length > 200000)
       return json(res, 400, { error: 'invalid_payload' });
@@ -69,5 +70,6 @@ const server = http.createServer(async (req, res) => {
     return json(res, 503, { error: 'processing_unavailable' });
   }
 });
-for (const key of ['APPLE_BUNDLE_ID','APPLE_APP_ID','APPLE_ROOT_CA_CERTS_BASE64','SCIPIC_INGEST_SHARED_SECRET','SCIPIC_VERIFIED_INGEST_URL']) requireEnv(key);
+// Start in fail-closed setup mode. /health remains available, but notification
+// verification cannot succeed until every required environment secret is set.
 server.listen(PORT, '0.0.0.0', () => console.log('scipic_apple_verifier_listening', PORT));
