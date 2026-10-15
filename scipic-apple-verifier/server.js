@@ -57,7 +57,7 @@ async function subscriptionStatus(req, res) {
   const raw = Buffer.concat(chunks);
   const timestamp = req.headers['x-scipic-timestamp'];
   const supplied = req.headers['x-scipic-signature'];
-  if (typeof timestamp !== 'string' || !/^\\d{13}$/.test(timestamp) ||
+  if (typeof timestamp !== 'string' || !/^\d{13}$/.test(timestamp) ||
       Math.abs(Date.now() - Number(timestamp)) > 60000 ||
       typeof supplied !== 'string' || !/^[a-f0-9]{64}$/.test(supplied))
     return json(res, 401, { error: 'unauthorized' });
@@ -70,7 +70,7 @@ async function subscriptionStatus(req, res) {
   catch { return json(res, 400, { error: 'invalid_json' }); }
   const { environment: requestedEnvironment, originalTransactionId } = input ?? {};
   if (!['Sandbox','Production'].includes(requestedEnvironment) ||
-      typeof originalTransactionId !== 'string' || !/^\\d{5,40}$/.test(originalTransactionId))
+      typeof originalTransactionId !== 'string' || !/^\d{5,40}$/.test(originalTransactionId))
     return json(res, 400, { error: 'invalid_request' });
   const appleEnvironment = requestedEnvironment === 'Production' ? Environment.PRODUCTION : Environment.SANDBOX;
   try {
