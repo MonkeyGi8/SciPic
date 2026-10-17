@@ -99,7 +99,7 @@ async function subscriptionStatus(req, res) {
         transactions.push({
           transactionId: t.transactionId, originalTransactionId: t.originalTransactionId,
           productId: t.productId, status: Number(item.status),
-          purchaseDate: t.purchaseDate ?? null, expiresDate: t.expiresDate ?? null,
+          purchaseDate: t.purchaseDate ?? null, signedDate: t.signedDate ?? null, expiresDate: t.expiresDate ?? null,
           revocationDate: t.revocationDate ?? null,
           appAccountToken: t.appAccountToken ?? null,
           autoRenewStatus: renewal?.autoRenewStatus ?? null
