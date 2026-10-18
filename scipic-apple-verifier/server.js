@@ -115,9 +115,10 @@ async function subscriptionStatus(req, res) {
 }
 
 const server = http.createServer(async (req, res) => {
-  if (req.method === 'GET' && req.url === '/health') return json(res, 200, { ok: true });
-  if (req.method === 'POST' && req.url === '/internal/apple/subscription-status') return subscriptionStatus(req, res);
-  if (req.method !== 'POST' || req.url !== '/apple/notifications') return json(res, 404, { error: 'not_found' });
+  const pathname = new URL(req.url ?? '/', 'http://localhost').pathname;
+  if (req.method === 'GET' && pathname === '/health') return json(res, 200, { ok: true });
+  if (req.method === 'POST' && pathname === '/internal/apple/subscription-status') return subscriptionStatus(req, res);
+  if (req.method !== 'POST' || pathname !== '/apple/notifications') return json(res, 404, { error: 'not_found' });
   try {
     for (const key of ['APPLE_BUNDLE_ID','APPLE_APP_ID','APPLE_ROOT_CA_CERTS_BASE64','SCIPIC_INGEST_SHARED_SECRET','SCIPIC_VERIFIED_INGEST_URL']) { if (!env[key]) return json(res, 503, { error: 'not_configured' }); }
     const body = await readBody(req);
