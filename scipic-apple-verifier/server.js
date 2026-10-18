@@ -45,8 +45,9 @@ async function forwardVerified(signedPayload, verified, environment) {
 
 // Internal, read-only status lookup. The request must be HMAC authenticated and
 // timestamped; no Apple transaction data or shared secrets are logged.
-async function subscriptionStatus(req, res) {
-  if (!['APPLE_PRIVATE_KEY','APPLE_KEY_ID','APPLE_ISSUER_ID','APPLE_BUNDLE_ID','APPLE_APP_ID','APPLE_ROOT_CA_CERTS_BASE64','SCIPIC_INGEST_SHARED_SECRET'].every(k => env[k]))
+async function subscriptionStatus(req, res, testCredential = false) {
+  const hmacSecretName = testCredential ? 'SCIPIC_TEST_INGEST_SHARED_SECRET' : 'SCIPIC_INGEST_SHARED_SECRET';
+  if (!['APPLE_PRIVATE_KEY','APPLE_KEY_ID','APPLE_ISSUER_ID','APPLE_BUNDLE_ID','APPLE_APP_ID','APPLE_ROOT_CA_CERTS_BASE64',hmacSecretName].every(k => env[k]))
     return json(res, 503, { error: 'not_configured' });
   const chunks = []; let size = 0;
   for await (const chunk of req) {
@@ -61,7 +62,7 @@ async function subscriptionStatus(req, res) {
       Math.abs(Date.now() - Number(timestamp)) > 60000 ||
       typeof supplied !== 'string' || !/^[a-f0-9]{64}$/.test(supplied))
     return json(res, 401, { error: 'unauthorized' });
-  const expected = createHmac('sha256', requireEnv('SCIPIC_INGEST_SHARED_SECRET'))
+  const expected = createHmac('sha256', requireEnv(hmacSecretName))
     .update(timestamp).update('.').update(raw).digest();
   if (!timingSafeEqual(expected, Buffer.from(supplied, 'hex')))
     return json(res, 401, { error: 'unauthorized' });
@@ -69,6 +70,8 @@ async function subscriptionStatus(req, res) {
   try { input = JSON.parse(raw.toString('utf8')); }
   catch { return json(res, 400, { error: 'invalid_json' }); }
   const { environment: requestedEnvironment, originalTransactionId } = input ?? {};
+  if (testCredential && requestedEnvironment !== 'Sandbox')
+    return json(res, 400, { error: 'test_endpoint_sandbox_only' });
   if (!['Sandbox','Production'].includes(requestedEnvironment) ||
       typeof originalTransactionId !== 'string' || !/^\d{5,40}$/.test(originalTransactionId))
     return json(res, 400, { error: 'invalid_request' });
@@ -117,7 +120,8 @@ async function subscriptionStatus(req, res) {
 const server = http.createServer(async (req, res) => {
   const pathname = new URL(req.url ?? '/', 'http://localhost').pathname;
   if (req.method === 'GET' && pathname === '/health') return json(res, 200, { ok: true });
-  if (req.method === 'POST' && pathname === '/internal/apple/subscription-status') return subscriptionStatus(req, res);
+  if (req.method === 'POST' && pathname === '/internal/apple/subscription-status') return subscriptionStatus(req, res, false);
+  if (req.method === 'POST' && pathname === '/internal/apple/test-subscription-status') return subscriptionStatus(req, res, true);
   if (req.method !== 'POST' || pathname !== '/apple/notifications') return json(res, 404, { error: 'not_found' });
   try {
     for (const key of ['APPLE_BUNDLE_ID','APPLE_APP_ID','APPLE_ROOT_CA_CERTS_BASE64','SCIPIC_INGEST_SHARED_SECRET','SCIPIC_VERIFIED_INGEST_URL']) { if (!env[key]) return json(res, 503, { error: 'not_configured' }); }
