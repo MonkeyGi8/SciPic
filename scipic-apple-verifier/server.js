@@ -112,6 +112,21 @@ async function subscriptionStatus(req, res, testCredential = false) {
     if (!transactions.length) throw new Error('no_verified_transactions');
     return json(res, 200, { ok: true, environment: requestedEnvironment, transactions });
   } catch (error) {
+    // Safe, structured diagnostics only for the isolated test route. Never log
+    // request bodies, transaction identifiers, credentials, or Apple responses.
+    if (testCredential) {
+      const httpStatus = Number(error?.httpStatusCode ?? error?.statusCode ?? error?.status);
+      const appleCode = Number(error?.apiError ?? error?.errorCode);
+      const diagnostic = {
+        stage: 'apple_status_lookup',
+        category: Number.isInteger(httpStatus) && httpStatus >= 400 && httpStatus <= 599
+          ? 'apple_http_error' : 'verification_or_transport_error',
+        ...(Number.isInteger(httpStatus) && httpStatus >= 400 && httpStatus <= 599 ? { appleHttpStatus: httpStatus } : {}),
+        ...(Number.isSafeInteger(appleCode) && appleCode > 0 ? { appleErrorCode: appleCode } : {})
+      };
+      console.warn('apple_test_subscription_status_failed', diagnostic);
+      return json(res, 503, { error: 'apple_status_unavailable', diagnostic });
+    }
     console.error('apple_subscription_status_failed', String(error?.message ?? 'unknown').slice(0, 120));
     return json(res, 503, { error: 'apple_status_unavailable' });
   }
