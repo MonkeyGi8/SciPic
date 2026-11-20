@@ -69,11 +69,12 @@ async function subscriptionStatus(req, res, testCredential = false) {
   let input;
   try { input = JSON.parse(raw.toString('utf8')); }
   catch { return json(res, 400, { error: 'invalid_json' }); }
-  const { environment: requestedEnvironment, originalTransactionId } = input ?? {};
+  const { environment: requestedEnvironment, originalTransactionId, transactionId } = input ?? {};
   if (testCredential && requestedEnvironment !== 'Sandbox')
     return json(res, 400, { error: 'test_endpoint_sandbox_only' });
   if (!['Sandbox','Production'].includes(requestedEnvironment) ||
-      typeof originalTransactionId !== 'string' || !/^\d{5,40}$/.test(originalTransactionId))
+      typeof originalTransactionId !== 'string' || !/^\d{5,40}$/.test(originalTransactionId) ||
+      (transactionId !== undefined && (typeof transactionId !== 'string' || !/^\d{5,40}$/.test(transactionId))))
     return json(res, 400, { error: 'invalid_request' });
   const appleEnvironment = requestedEnvironment === 'Production' ? Environment.PRODUCTION : Environment.SANDBOX;
   try {
@@ -82,6 +83,22 @@ async function subscriptionStatus(req, res, testCredential = false) {
       requireEnv('APPLE_KEY_ID'), requireEnv('APPLE_ISSUER_ID'),
       requireEnv('APPLE_BUNDLE_ID'), appleEnvironment
     );
+    let exactTransaction = null;
+    if (transactionId !== undefined) {
+      const exactResponse = await api.getTransactionInfo(transactionId);
+      if (!exactResponse?.signedTransactionInfo) throw new Error('missing_exact_transaction');
+      const t = await verifier(appleEnvironment).verifyAndDecodeTransaction(exactResponse.signedTransactionInfo);
+      if (t.transactionId !== transactionId || t.originalTransactionId !== originalTransactionId ||
+          t.environment !== requestedEnvironment || t.bundleId !== requireEnv('APPLE_BUNDLE_ID') ||
+          !['scipic.premium.monthly','scipic.premium.annual'].includes(t.productId))
+        throw new Error('exact_transaction_identity_mismatch');
+      exactTransaction = {
+        transactionId: t.transactionId, originalTransactionId: t.originalTransactionId,
+        productId: t.productId, purchaseDate: t.purchaseDate ?? null,
+        signedDate: t.signedDate ?? null, expiresDate: t.expiresDate ?? null,
+        revocationDate: t.revocationDate ?? null, appAccountToken: t.appAccountToken ?? null
+      };
+    }
     const result = await api.getAllSubscriptionStatuses(originalTransactionId);
     if (result.bundleId !== requireEnv('APPLE_BUNDLE_ID') ||
         result.environment !== requestedEnvironment ||
@@ -110,7 +127,7 @@ async function subscriptionStatus(req, res, testCredential = false) {
       }
     }
     if (!transactions.length) throw new Error('no_verified_transactions');
-    return json(res, 200, { ok: true, environment: requestedEnvironment, transactions });
+    return json(res, 200, { ok: true, environment: requestedEnvironment, exactTransaction, transactions });
   } catch (error) {
     // Safe, structured diagnostics only for the isolated test route. Never log
     // request bodies, transaction identifiers, credentials, or Apple responses.
