@@ -26,8 +26,22 @@ function verifier(environment) {
     environment === Environment.PRODUCTION ? Number(requireEnv('APPLE_APP_ID')) : undefined);
 }
 async function forwardVerified(signedPayload, verified, environment) {
+  const expectedEnvironment = environment === Environment.SANDBOX ? 'Sandbox' : 'Production';
+  const verify = verifier(environment);
+  const data = verified.data;
+  const tx = data?.signedTransactionInfo ? await verify.verifyAndDecodeTransaction(data.signedTransactionInfo) : null;
+  const renewal = data?.signedRenewalInfo ? await verify.verifyAndDecodeRenewalInfo(data.signedRenewalInfo) : null;
+  const products = ['scipic.premium.monthly','scipic.premium.annual'];
+  const validId = v => typeof v === 'string' && /^\d{5,40}$/.test(v);
+  if (tx && (tx.environment !== expectedEnvironment || tx.bundleId !== requireEnv('APPLE_BUNDLE_ID') || !products.includes(tx.productId) || !validId(tx.transactionId) || !validId(tx.originalTransactionId))) throw new Error('transaction_identity_mismatch');
+  if (renewal && ((renewal.environment != null && renewal.environment !== expectedEnvironment) || (renewal.productId != null && !products.includes(renewal.productId)) || !validId(renewal.originalTransactionId) || (tx && renewal.originalTransactionId !== tx.originalTransactionId) || (tx?.appAccountToken && renewal.appAccountToken && tx.appAccountToken.toLowerCase() !== renewal.appAccountToken.toLowerCase()))) throw new Error('renewal_identity_mismatch');
+  const originalTransactionId = tx?.originalTransactionId ?? renewal?.originalTransactionId ?? null;
+  if (verified.notificationType !== 'TEST' && !validId(originalTransactionId)) throw new Error('missing_verified_identity');
   const body = JSON.stringify({
-    environment: environment === Environment.SANDBOX ? 'Sandbox' : 'Production',
+    contractVersion: 2,
+    originalTransactionId,
+    transactionId: tx?.transactionId ?? null,
+    environment: expectedEnvironment,
     notificationUUID: verified.notificationUUID,
     notificationType: verified.notificationType,
     subtype: verified.subtype ?? null,
